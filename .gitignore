@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Environment & Python
+.env
+__pycache__/
+*.pyc
+.venv/
+
+# micropython binaries
+ESP32_*.bin

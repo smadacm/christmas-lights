@@ -25,45 +25,56 @@ class Rainbow(Pattern):
     self.gd = 0
     self.bd = 0
     self.colors = [list(self.pixels[i]) for i in range(self.n)]
-    self.dirs = [0, 0, 0]
+    self.head = 0
     self.iter = RAINBOW_ITER if RAINBOW_ITER else -1
 
   def render_frame(self):
     if self.iter == 0:
       return False
 
-    this_color = self.colors.pop()
-    this_color[0] = self.colors[0][0]
-    this_color[1] = self.colors[0][1]
-    this_color[2] = self.colors[0][2]
-    self.dirs[0] = self.gd
-    self.dirs[1] = self.rd
-    self.dirs[2] = self.bd
+    n = self.n
+    colors = self.colors
+    prev = colors[self.head]
+    self.head = (self.head - 1) % n
+    this_color = colors[self.head]
 
-    for i, c in enumerate(this_color):
-      if self.dirs[i] == 1:
-        c += RAINBOW_STEP
-      elif self.dirs[i] == -1:
-        c -= RAINBOW_STEP
-      if c > 255:
-        c = 255
-      elif c < 0:
-        c = 0
-      this_color[i] = c
+    c0 = prev[0] + (RAINBOW_STEP if self.gd == 1 else (-RAINBOW_STEP if self.gd == -1 else 0))
+    c1 = prev[1] + (RAINBOW_STEP if self.rd == 1 else (-RAINBOW_STEP if self.rd == -1 else 0))
+    c2 = prev[2] + (RAINBOW_STEP if self.bd == 1 else (-RAINBOW_STEP if self.bd == -1 else 0))
 
-    self.colors.insert(0, this_color)
+    if c0 > 255:
+      c0 = 255
+    elif c0 < 0:
+      c0 = 0
+    if c1 > 255:
+      c1 = 255
+    elif c1 < 0:
+      c1 = 0
+    if c2 > 255:
+      c2 = 255
+    elif c2 < 0:
+      c2 = 0
 
-    if this_color[0] in (0, 255) and this_color[1] in (0, 255) and this_color[2] in (0, 255):
+    this_color[0] = c0
+    this_color[1] = c1
+    this_color[2] = c2
+
+    if (c0 == 0 or c0 == 255) and (c1 == 0 or c1 == 255) and (c2 == 0 or c2 == 255):
       self.gd, self.rd, self.bd = RAINBOW_DIR_MAP.get(
-        tuple(this_color), (self.gd, self.rd, self.bd)
+        (c0, c1, c2), (self.gd, self.rd, self.bd)
       )
 
     if DEBUG:
       print('this_color', this_color)
       print('rd,gd,bd', self.rd, self.gd, self.bd)
 
-    for i in range(self.n):
-      self.pixels[i] = self.colors[i]
+    pixels = self.pixels
+    idx = self.head
+    for i in range(n):
+      pixels[i] = colors[idx]
+      idx += 1
+      if idx == n:
+        idx = 0
 
     if self.iter > 0:
       self.iter -= 1

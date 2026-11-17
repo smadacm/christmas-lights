@@ -9,14 +9,17 @@ class CandyCane(Pattern):
   sleep_ms = 120
 
   def setup(self):
-    self.stripe_len = 4
-    self.period = self.stripe_len * 2
+    stripe_len = 4
+    self.period = stripe_len * 2
     self.offset = 0
+    self.frames = [
+      [
+        RED if ((i + offset) % self.period) < stripe_len else WHITE
+        for i in range(self.n)
+      ]
+      for offset in range(self.period)
+    ]
 
   def render_frame(self):
-    for i in range(self.n):
-      if ((i + self.offset) % self.period) < self.stripe_len:
-        self.pixels[i] = RED
-      else:
-        self.pixels[i] = WHITE
+    self.pixels = self.frames[self.offset]
     self.offset = (self.offset + 1) % self.period

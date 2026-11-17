@@ -12,16 +12,20 @@ class RedGreenShooting(Pattern):
     self.pixels = [[0, 0, 0] for _ in range(self.n)]
     self.pos_red = 0
     self.pos_green = self.n // 2
-    self.tail_decay = 0.75
 
   def render_frame(self):
+    pixels = self.pixels
     for i in range(self.n):
-      self.pixels[i][0] = int(self.pixels[i][0] * self.tail_decay)
-      self.pixels[i][1] = int(self.pixels[i][1] * self.tail_decay)
-      self.pixels[i][2] = int(self.pixels[i][2] * self.tail_decay)
+      p = pixels[i]
+      p[0] = (p[0] * 3) >> 2
+      p[1] = (p[1] * 3) >> 2
+      p[2] = (p[2] * 3) >> 2
 
-    self.pixels[self.pos_red] = [RED[0], RED[1], RED[2]]
-    self.pixels[self.pos_green] = [GREEN[0], GREEN[1], GREEN[2]]
+    pr = pixels[self.pos_red]
+    pr[0], pr[1], pr[2] = RED[0], RED[1], RED[2]
+
+    pg = pixels[self.pos_green]
+    pg[0], pg[1], pg[2] = GREEN[0], GREEN[1], GREEN[2]
 
     self.pos_red = (self.pos_red + 1) % self.n
     self.pos_green = (self.pos_green + 1) % self.n

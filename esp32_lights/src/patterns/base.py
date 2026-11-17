@@ -22,6 +22,12 @@ class Pattern:
     self._controller = controller
     self.n = len(np)
     self.pixels = [(0, 0, 0)] * self.n
+    self._buf = getattr(np, 'buf', None)
+    self._bpp = getattr(np, 'bpp', 3)
+    order = getattr(np, 'ORDER', (1, 0, 2, 3))
+    self._o0 = order[0]
+    self._o1 = order[1]
+    self._o2 = order[2]
     self.setup()
 
   def setup(self):
@@ -29,21 +35,75 @@ class Pattern:
     pass
 
   def cut_color(self, color):
-    brightness = self._controller.brightness if self._controller is not None else 50
+    brightness = self._controller.get_mod('brightness') if self._controller is not None else None
+    scale = brightness.get_global_scale() if brightness is not None else 128
     return (
-      color[0] * brightness // 100,
-      color[1] * brightness // 100,
-      color[2] * brightness // 100,
+      (color[0] * scale) >> 8,
+      (color[1] * scale) >> 8,
+      (color[2] * scale) >> 8,
     )
 
   def write(self):
-    for i in range(self.n):
-      color = self.pixels[i]
-      if self._controller is not None:
-        color = self._controller.apply_modifications(i, color)
-      self._np[i] = self.cut_color(color)
+    n = self.n
+    pixels = self.pixels
+    ctrl = self._controller
+    b_scale = 256
+    mods = ctrl.mods.values() if ctrl is not None else ()
+
+    scale_spec = None
+    for mod in mods:
+      if mod.is_active():
+        g_scale = mod.get_global_scale()
+        if g_scale is not None:
+          b_scale = (b_scale * g_scale) >> 8
+        if scale_spec is None:
+          spec = mod.get_scale_table()
+          if spec is not None:
+            scale_spec = spec
+
+    buf = self._buf
+    np = self._np
+    o0 = self._o0
+    o1 = self._o1
+    o2 = self._o2
+
+    if buf is not None and self._bpp == 3:
+      if scale_spec is not None:
+        table, width, offset = scale_spec
+        for i in range(n):
+          c = pixels[i]
+          scale = (table[(i - offset) % width] * b_scale) >> 8
+          j = i * 3
+          buf[j + o0] = (c[0] * scale) >> 8
+          buf[j + o1] = (c[1] * scale) >> 8
+          buf[j + o2] = (c[2] * scale) >> 8
+      else:
+        for i in range(n):
+          c = pixels[i]
+          j = i * 3
+          buf[j + o0] = (c[0] * b_scale) >> 8
+          buf[j + o1] = (c[1] * b_scale) >> 8
+          buf[j + o2] = (c[2] * b_scale) >> 8
+      target_buf = buf
+    else:
+      target_buf = None
+      if scale_spec is not None:
+        table, width, offset = scale_spec
+        for i in range(n):
+          c = pixels[i]
+          scale = (table[(i - offset) % width] * b_scale) >> 8
+          np[i] = ((c[0] * scale) >> 8, (c[1] * scale) >> 8, (c[2] * scale) >> 8)
+      else:
+        for i in range(n):
+          c = pixels[i]
+          np[i] = ((c[0] * b_scale) >> 8, (c[1] * b_scale) >> 8, (c[2] * b_scale) >> 8)
+
+    for mod in mods:
+      if mod.is_active():
+        mod.post_write(target_buf, np, n, b_scale, o0, o1, o2)
+
     gc.disable()
-    self._np.write()
+    np.write()
     gc.enable()
 
   def fill(self, color):

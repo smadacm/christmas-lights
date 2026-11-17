@@ -9,11 +9,14 @@ class ChristmasChase(Pattern):
   sleep_ms = 180
 
   def setup(self):
-    self.palette = (RED, GREEN, WHITE)
+    palette = (RED, GREEN, WHITE)
+    self.period = len(palette)
     self.offset = 0
+    self.frames = [
+      [palette[(i + offset) % self.period] for i in range(self.n)]
+      for offset in range(self.period)
+    ]
 
   def render_frame(self):
-    palette_len = len(self.palette)
-    for i in range(self.n):
-      self.pixels[i] = self.palette[(i + self.offset) % palette_len]
-    self.offset = (self.offset + 1) % palette_len
+    self.pixels = self.frames[self.offset]
+    self.offset = (self.offset + 1) % self.period

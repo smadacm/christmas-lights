@@ -36,7 +36,7 @@ def make_program_handler(light_controller, program_name: str):
 
 def make_brightness_adjust_handler(light_controller, delta: int):
   async def handler(request: HttpRequest):
-    light_controller.adjust_brightness(delta)
+    light_controller.configure_mod('brightness', delta=delta)
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
@@ -47,7 +47,7 @@ def make_brightness_adjust_handler(light_controller, delta: int):
 
 def make_brightness_set_handler(light_controller, value: int):
   async def handler(request: HttpRequest):
-    light_controller.set_brightness(value)
+    light_controller.configure_mod('brightness', level=value)
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
@@ -74,7 +74,7 @@ def make_timing_set_handler(light_controller, value: float):
 
 def make_wave_direction_handler(light_controller, direction: int):
   async def handler(request: HttpRequest):
-    light_controller.set_wave_mod(direction=direction)
+    light_controller.configure_mod('wave', direction=direction)
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
@@ -86,35 +86,46 @@ def make_wave_direction_handler(light_controller, direction: int):
 def register_routes(router, light_controller):
   async def index(request: HttpRequest):
     wave_labels = {0: 'Off', 1: 'Wave', -1: 'Reverse Wave'}
+    brightness = light_controller.get_mod('brightness')
+    twinkle = light_controller.get_mod('twinkle')
+    wave = light_controller.get_mod('wave')
     return render_page('index.html', {
       'active_program': format_program_name(light_controller.active_program),
-      'brightness': light_controller.brightness,
+      'brightness': brightness.level if brightness else 50,
       'string_length': light_controller.string_length,
       'sleep_modifier': light_controller.sleep_modifier,
       'base_sleep_ms': light_controller.get_base_sleep_ms(),
       'effective_sleep_ms': light_controller.get_effective_sleep_ms(),
-      'twinkle_status': 'On' if light_controller.twinkle_mod.enabled else 'Off',
-      'twinkle_count': light_controller.twinkle_mod.count,
-      'wave_status': wave_labels.get(light_controller.wave_mod.direction, 'Off'),
-      'wave_min': light_controller.wave_mod.min_brightness,
-      'wave_max': light_controller.wave_mod.max_brightness,
-      'wave_width': light_controller.wave_mod.width,
+      'twinkle_status': 'On' if twinkle and twinkle.enabled else 'Off',
+      'twinkle_count': twinkle.count if twinkle else 5,
+      'twinkle_speed': twinkle.speed if twinkle else 1,
+      'wave_status': wave_labels.get(wave.direction if wave else 0, 'Off'),
+      'wave_min': wave.min_brightness if wave else 20,
+      'wave_max': wave.max_brightness if wave else 100,
+      'wave_width': wave.width if wave else 20,
     })
 
   async def toggle_twinkle(request: HttpRequest):
-    light_controller.set_twinkle_mod(enabled=not light_controller.twinkle_mod.enabled)
+    twinkle = light_controller.get_mod('twinkle')
+    if twinkle is not None:
+      light_controller.configure_mod('twinkle', enabled=not twinkle.enabled)
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
     return resp
 
   async def set_twinkle(request: HttpRequest):
-    raw_count = request.qs.get(b'count')
-    if raw_count is not None:
-      try:
-        light_controller.set_twinkle_mod(count=int(raw_count))
-      except ValueError:
-        pass
+    try:
+      raw_count = request.qs.get(b'count')
+      raw_speed = request.qs.get(b'speed')
+      light_controller.configure_mod(
+        'twinkle',
+        count=int(raw_count) if raw_count is not None else None,
+        speed=int(raw_speed) if raw_speed is not None else None,
+        n=light_controller.string_length,
+      )
+    except ValueError:
+      pass
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
@@ -125,7 +136,8 @@ def register_routes(router, light_controller):
       raw_min = request.qs.get(b'min')
       raw_max = request.qs.get(b'max')
       raw_width = request.qs.get(b'width')
-      light_controller.set_wave_mod(
+      light_controller.configure_mod(
+        'wave',
         min_brightness=int(raw_min) if raw_min is not None else None,
         max_brightness=int(raw_max) if raw_max is not None else None,
         width=int(raw_width) if raw_width is not None else None,

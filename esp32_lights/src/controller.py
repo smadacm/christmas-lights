@@ -5,7 +5,7 @@ from patterns.basic import Basic
 from patterns.candy_cane import CandyCane
 from patterns.christmas_chase import ChristmasChase
 from patterns.demo import Demo
-from patterns.modifications import TwinkleMod, WaveMod
+from patterns.modifications import BrightnessMod, TwinkleMod, WaveMod
 from patterns.off import Off
 from patterns.rainbow import Rainbow
 from patterns.red_green_shooting import RedGreenShooting
@@ -28,6 +28,13 @@ DEFAULT_PROGRAMS = (
 )
 
 
+DEFAULT_MODS = (
+  BrightnessMod,
+  WaveMod,
+  TwinkleMod,
+)
+
+
 class LightController:
   """Manages the active LED pattern task on a NeoPixel strip."""
 
@@ -35,7 +42,7 @@ class LightController:
     self,
     np,
     programs=None,
-    brightness=50,
+    mods=None,
     sleep_modifier=1.0,
     np_factory=None,
     config_path='config.json',
@@ -49,10 +56,14 @@ class LightController:
       self.programs = dict(program_list)
     else:
       self.programs = {p.name: p for p in program_list}
-    self.brightness = max(0, min(100, int(brightness)))
+
+    mod_list = mods if mods is not None else DEFAULT_MODS
+    if isinstance(mod_list, dict):
+      self.mods = dict(mod_list)
+    else:
+      self.mods = {m.name: m() for m in mod_list}
+
     self.sleep_modifier = round(max(0.001, min(10.0, float(sleep_modifier))), 3)
-    self.twinkle_mod = TwinkleMod()
-    self.wave_mod = WaveMod()
     self.active_program = None
     self._pattern = None
     self._task = None
@@ -60,19 +71,9 @@ class LightController:
   def to_config_dict(self):
     return {
       'active_program': self.active_program or 'off',
-      'brightness': self.brightness,
       'string_length': self.string_length,
       'sleep_modifier': self.sleep_modifier,
-      'twinkle_mod': {
-        'enabled': self.twinkle_mod.enabled,
-        'count': self.twinkle_mod.count,
-      },
-      'wave_mod': {
-        'direction': self.wave_mod.direction,
-        'min_brightness': self.wave_mod.min_brightness,
-        'max_brightness': self.wave_mod.max_brightness,
-        'width': self.wave_mod.width,
-      },
+      'mods': {name: mod.to_dict() for name, mod in self.mods.items()},
     }
 
   def save_config(self):
@@ -94,32 +95,17 @@ class LightController:
     except (OSError, ValueError):
       return 'off'
 
-    if 'brightness' in data:
-      self.brightness = max(0, min(100, int(data['brightness'])))
     if 'sleep_modifier' in data:
       val = float(data['sleep_modifier'])
       if val > 0:
         self.sleep_modifier = round(max(0.001, min(10.0, val)), 3)
 
-    twinkle_data = data.get('twinkle_mod')
-    if isinstance(twinkle_data, dict):
-      if 'enabled' in twinkle_data:
-        self.twinkle_mod.enabled = bool(twinkle_data['enabled'])
-      if 'count' in twinkle_data:
-        self.twinkle_mod.count = max(1, int(twinkle_data['count']))
-
-    wave_data = data.get('wave_mod')
-    if isinstance(wave_data, dict):
-      if 'direction' in wave_data:
-        self.wave_mod.direction = int(wave_data['direction'])
-      if 'min_brightness' in wave_data:
-        self.wave_mod.min_brightness = max(0, min(100, int(wave_data['min_brightness'])))
-      if 'max_brightness' in wave_data:
-        self.wave_mod.max_brightness = max(0, min(100, int(wave_data['max_brightness'])))
-      if self.wave_mod.min_brightness > self.wave_mod.max_brightness:
-        self.wave_mod.min_brightness = self.wave_mod.max_brightness
-      if 'width' in wave_data:
-        self.wave_mod.width = max(2, int(wave_data['width']))
+    mods_data = data.get('mods')
+    if isinstance(mods_data, dict):
+      for name, mod_data in mods_data.items():
+        mod = self.mods.get(name)
+        if mod is not None:
+          mod.load_dict(mod_data)
 
     if 'string_length' in data:
       new_length = max(1, min(1000, int(data['string_length'])))
@@ -133,18 +119,6 @@ class LightController:
 
   def list_programs(self):
     return list(self.programs.values())
-
-  def set_brightness(self, value):
-    """Set brightness percentage (0-100) and refresh the active pattern."""
-    self.brightness = max(0, min(100, int(value)))
-    if self._pattern is not None:
-      self._pattern.write()
-    self.save_config()
-    return self.brightness
-
-  def adjust_brightness(self, delta):
-    """Adjust brightness percentage by delta, clamped to 0-100."""
-    return self.set_brightness(self.brightness + delta)
 
   def set_sleep_modifier(self, value):
     """Set timing modifier (> 0, up to 3 decimal places, clamped to 0.001-10.0)."""
@@ -167,38 +141,22 @@ class LightController:
     return max(1, int(round(self.get_base_sleep_ms() * self.sleep_modifier)))
 
   def step_modifications(self):
-    self.wave_mod.step(self.string_length)
-    self.twinkle_mod.step(self.string_length)
+    for mod in self.mods.values():
+      mod.step(self.string_length)
 
-  def apply_modifications(self, index, color):
-    color = self.wave_mod.apply(index, color)
-    color = self.twinkle_mod.apply(index, color)
-    return color
+  def get_mod(self, name):
+    return self.mods.get(name)
 
-  def set_twinkle_mod(self, enabled=None, count=None):
-    if enabled is not None:
-      self.twinkle_mod.enabled = bool(enabled)
-    if count is not None:
-      self.twinkle_mod.count = max(1, min(self.string_length, int(count)))
-    if self._pattern is not None:
-      self.twinkle_mod.step(self.string_length)
-      self._pattern.write()
-    self.save_config()
-
-  def set_wave_mod(self, direction=None, min_brightness=None, max_brightness=None, width=None):
-    if direction is not None:
-      self.wave_mod.direction = int(direction)
-    if min_brightness is not None:
-      self.wave_mod.min_brightness = max(0, min(100, int(min_brightness)))
-    if max_brightness is not None:
-      self.wave_mod.max_brightness = max(0, min(100, int(max_brightness)))
-    if self.wave_mod.min_brightness > self.wave_mod.max_brightness:
-      self.wave_mod.min_brightness = self.wave_mod.max_brightness
-    if width is not None:
-      self.wave_mod.width = max(2, int(width))
+  def configure_mod(self, name, **kwargs):
+    mod = self.mods.get(name)
+    if mod is None:
+      return None
+    mod.configure(**kwargs)
+    mod.step(self.string_length)
     if self._pattern is not None:
       self._pattern.write()
     self.save_config()
+    return mod
 
   def set_string_length(self, length):
     """Update the LED string length, rebuild NeoPixel, and restart the active program."""

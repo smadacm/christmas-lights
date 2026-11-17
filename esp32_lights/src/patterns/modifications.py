@@ -5,6 +5,7 @@ class Modification:
   """Base class for pattern post-processing modifications."""
 
   name = None
+  template = None
 
   def __init__(self, enabled=False):
     self.enabled = bool(enabled)
@@ -20,6 +21,10 @@ class Modification:
     """Update modification parameters."""
     if 'enabled' in kwargs and kwargs['enabled'] is not None:
       self.enabled = bool(kwargs['enabled'])
+
+  def get_context(self):
+    """Return template context variables for this modification's UI block."""
+    return {'enabled': 'On' if self.enabled else 'Off'}
 
   def to_dict(self):
     """Serialize modification state for config persistence."""
@@ -47,19 +52,24 @@ class BrightnessMod(Modification):
   """Scales overall LED brightness (0-100%)."""
 
   name = 'brightness'
+  template = 'mods/brightness.html'
 
-  def __init__(self, level=50):
-    super().__init__(enabled=True)
+  def __init__(self, level=50, enabled=True):
+    super().__init__(enabled=enabled)
     self.level = max(0, min(100, int(level)))
 
-  def configure(self, level=None, delta=None, **kwargs):
+  def configure(self, enabled=None, level=None, delta=None, **kwargs):
+    super().configure(enabled=enabled)
     if delta is not None:
       self.level = max(0, min(100, self.level + int(delta)))
     if level is not None:
       self.level = max(0, min(100, int(level)))
 
+  def get_context(self):
+    return {'brightness': self.level}
+
   def to_dict(self):
-    return {'level': self.level}
+    return {'enabled': self.enabled, 'level': self.level}
 
   def get_global_scale(self):
     return (self.level * 256) // 100
@@ -69,6 +79,7 @@ class TwinkleMod(Modification):
   """Overlays non-persistent white sparkles onto any pattern frame."""
 
   name = 'twinkle'
+  template = 'mods/twinkle.html'
 
   def __init__(self, enabled=False, count=5, speed=1):
     super().__init__(enabled=enabled)
@@ -77,7 +88,7 @@ class TwinkleMod(Modification):
     self._frame = 0
     self.active_indices = set()
 
-  def configure(self, enabled=None, count=None, speed=None, n=1000):
+  def configure(self, enabled=None, count=None, speed=None, n=1000, **kwargs):
     if enabled is not None:
       self.enabled = bool(enabled)
       self._frame = 0
@@ -87,6 +98,13 @@ class TwinkleMod(Modification):
     if speed is not None:
       self.speed = max(1, int(speed))
       self._frame = 0
+
+  def get_context(self):
+    return {
+      'twinkle_status': 'On' if self.enabled else 'Off',
+      'twinkle_count': self.count,
+      'twinkle_speed': self.speed,
+    }
 
   def to_dict(self):
     return {
@@ -129,9 +147,10 @@ class WaveMod(Modification):
   """Applies a moving brightness wave (forward or reverse) across the strip."""
 
   name = 'wave'
+  template = 'mods/wave.html'
 
-  def __init__(self, direction=0, min_brightness=20, max_brightness=100, width=20):
-    super().__init__(enabled=(direction != 0))
+  def __init__(self, enabled=False, direction=1, min_brightness=20, max_brightness=100, width=20):
+    super().__init__(enabled=enabled)
     self.direction = int(direction)  # 0=off, 1=forward, -1=reverse
     self.min_brightness = max(0, min(100, int(min_brightness)))
     self.max_brightness = max(0, min(100, int(max_brightness)))
@@ -141,9 +160,13 @@ class WaveMod(Modification):
     self.rebuild_table()
 
   def is_active(self):
-    return self.direction != 0
+    return self.enabled and self.direction != 0
 
-  def configure(self, direction=None, min_brightness=None, max_brightness=None, width=None, **kwargs):
+  def configure(self, enabled=None, direction=None, min_brightness=None, max_brightness=None, width=None, **kwargs):
+    if enabled is not None:
+      self.enabled = bool(enabled)
+      if self.enabled and self.direction == 0:
+        self.direction = 1
     if direction is not None:
       self.direction = int(direction)
       self.enabled = self.direction != 0
@@ -157,8 +180,18 @@ class WaveMod(Modification):
       self.width = max(2, int(width))
     self.rebuild_table()
 
+  def get_context(self):
+    wave_labels = {0: 'Off', 1: 'Wave', -1: 'Reverse Wave'}
+    return {
+      'wave_status': wave_labels.get(self.direction if self.enabled else 0, 'Off'),
+      'wave_min': self.min_brightness,
+      'wave_max': self.max_brightness,
+      'wave_width': self.width,
+    }
+
   def to_dict(self):
     return {
+      'enabled': self.enabled,
       'direction': self.direction,
       'min_brightness': self.min_brightness,
       'max_brightness': self.max_brightness,
@@ -178,10 +211,10 @@ class WaveMod(Modification):
     self.table = table
 
   def step(self, n):
-    if self.direction != 0:
+    if self.enabled and self.direction != 0:
       self.offset = (self.offset + self.direction) % self.width
 
   def get_scale_table(self):
-    if self.direction == 0:
+    if not self.enabled or self.direction == 0:
       return None
     return (self.table, self.width, self.offset)

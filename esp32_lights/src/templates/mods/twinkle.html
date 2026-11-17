@@ -1,0 +1,13 @@
+<div class="block">
+  <div class="block-title">Twinkle Mod: {twinkle_status}</div>
+  <div class="btn-row">
+    <a href="/mod/twinkle/toggle">Turn Off</a>
+  </div>
+  <form class="form-row" action="/mod/twinkle" method="get">
+    <label for="twinkle_count">LEDs:</label>
+    <input id="twinkle_count" type="number" name="count" value="{twinkle_count}" min="1" max="1000">
+    <label for="twinkle_speed">Frames:</label>
+    <input id="twinkle_speed" type="number" name="speed" value="{twinkle_speed}" min="1" max="1000">
+    <button type="submit">Set</button>
+  </form>
+</div>

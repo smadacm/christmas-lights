@@ -4,10 +4,9 @@ from .models import HttpRequest, HttpResponse
 pages_dir = './pages'
 
 
-def render_page(page_name: str, context=None):
+def render_template_str(page_name: str, context=None):
   page = f'{pages_dir}/{page_name}'
-
-  resp = HttpResponse()
+  print(f'{page_name} -- {page}')
   with open(page) as fd:
     content = fd.read()
 
@@ -18,7 +17,12 @@ def render_page(page_name: str, context=None):
       content = content.replace('{{' + key + '}}', val_str)
       content = content.replace('{' + key + '}', val_str)
 
-  resp.data = content
+  return content
+
+
+def render_page(page_name: str, context=None):
+  resp = HttpResponse()
+  resp.data = render_template_str(page_name, context)
   return resp
 
 
@@ -83,36 +87,54 @@ def make_wave_direction_handler(light_controller, direction: int):
   return handler
 
 
-def register_routes(router, light_controller):
-  async def index(request: HttpRequest):
-    wave_labels = {0: 'Off', 1: 'Wave', -1: 'Reverse Wave'}
-    brightness = light_controller.get_mod('brightness')
-    twinkle = light_controller.get_mod('twinkle')
-    wave = light_controller.get_mod('wave')
-    return render_page('index.html', {
-      'active_program': format_program_name(light_controller.active_program),
-      'brightness': brightness.level if brightness else 50,
-      'string_length': light_controller.string_length,
-      'sleep_modifier': light_controller.sleep_modifier,
-      'base_sleep_ms': light_controller.get_base_sleep_ms(),
-      'effective_sleep_ms': light_controller.get_effective_sleep_ms(),
-      'twinkle_status': 'On' if twinkle and twinkle.enabled else 'Off',
-      'twinkle_count': twinkle.count if twinkle else 5,
-      'twinkle_speed': twinkle.speed if twinkle else 1,
-      'wave_status': wave_labels.get(wave.direction if wave else 0, 'Off'),
-      'wave_min': wave.min_brightness if wave else 20,
-      'wave_max': wave.max_brightness if wave else 100,
-      'wave_width': wave.width if wave else 20,
-    })
-
-  async def toggle_twinkle(request: HttpRequest):
-    twinkle = light_controller.get_mod('twinkle')
-    if twinkle is not None:
-      light_controller.configure_mod('twinkle', enabled=not twinkle.enabled)
+def make_mod_toggle_handler(light_controller, mod_name: str):
+  async def handler(request: HttpRequest):
+    mod = light_controller.get_mod(mod_name)
+    if mod is not None:
+      light_controller.configure_mod(mod_name, enabled=not mod.enabled)
     resp = HttpResponse()
     resp.status = 302
     resp.headers['Location'] = '/'
     return resp
+
+  return handler
+
+
+def register_routes(router, light_controller):
+  async def index(request: HttpRequest):
+    pattern_buttons = '\n'.join(
+      '<li><a href="{}">{}</a></li>'.format(
+        p.path or '/{}'.format(p.name),
+        format_program_name(p.name),
+      )
+      for p in light_controller.list_programs()
+    )
+
+    mod_toggles = '\n'.join(
+      '<a href="/mod/{}/toggle">{}: {}</a>'.format(
+        mod.name,
+        format_program_name(mod.name),
+        'On' if mod.enabled else 'Off',
+      )
+      for mod in light_controller.mods.values()
+    )
+
+    mod_blocks = '\n'.join(
+      render_template_str(mod.template, mod.get_context())
+      for mod in light_controller.mods.values()
+      if mod.enabled and mod.template
+    )
+
+    return render_page('index.html', {
+      'active_program': format_program_name(light_controller.active_program),
+      'string_length': light_controller.string_length,
+      'sleep_modifier': light_controller.sleep_modifier,
+      'base_sleep_ms': light_controller.get_base_sleep_ms(),
+      'effective_sleep_ms': light_controller.get_effective_sleep_ms(),
+      'pattern_buttons': pattern_buttons,
+      'mod_toggles': mod_toggles,
+      'mod_blocks': mod_blocks,
+    })
 
   async def set_twinkle(request: HttpRequest):
     try:
@@ -180,12 +202,14 @@ def register_routes(router, light_controller):
   router.add_route(b'/timing/set/0.5', make_timing_set_handler(light_controller, 0.5))
   router.add_route(b'/timing/set/1', make_timing_set_handler(light_controller, 1.0))
   router.add_route(b'/timing/set/2', make_timing_set_handler(light_controller, 2.0))
-  router.add_route(b'/mod/twinkle/toggle', toggle_twinkle)
   router.add_route(b'/mod/twinkle', set_twinkle)
   router.add_route(b'/mod/wave/off', make_wave_direction_handler(light_controller, 0))
   router.add_route(b'/mod/wave/forward', make_wave_direction_handler(light_controller, 1))
   router.add_route(b'/mod/wave/reverse', make_wave_direction_handler(light_controller, -1))
   router.add_route(b'/mod/wave', set_wave)
+
+  for mod_name in light_controller.mods:
+    router.add_route('/mod/{}/toggle'.format(mod_name).encode(), make_mod_toggle_handler(light_controller, mod_name))
   router.add_route(b'/brightness/down/5', make_brightness_adjust_handler(light_controller, -5))
   router.add_route(b'/brightness/down/1', make_brightness_adjust_handler(light_controller, -1))
   router.add_route(b'/brightness/up/1', make_brightness_adjust_handler(light_controller, 1))

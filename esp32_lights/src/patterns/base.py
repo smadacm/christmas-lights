@@ -28,6 +28,7 @@ class Pattern:
     self._o0 = order[0]
     self._o1 = order[1]
     self._o2 = order[2]
+    self._action_pos = 0
     self.setup()
 
   def setup(self):
@@ -112,6 +113,89 @@ class Pattern:
 
   def clear(self):
     self.fill((0, 0, 0))
+
+  def wipe(self, color, pos=None, edge=0, step=1):
+    """Fill pixels up to pos with color, with an optional leading-edge ramp.
+
+    Returns (next_pos, done). If pos is None, uses and updates self._action_pos.
+    """
+    use_internal = pos is None
+    if use_internal:
+      pos = self._action_pos
+
+    n = self.n
+    pixels = self.pixels
+    step = max(1, int(step))
+    edge = max(0, int(edge))
+
+    solid_end = min(n, pos - edge + 1) if edge > 0 else min(n, pos + step)
+    for i in range(max(0, solid_end)):
+      pixels[i] = color
+
+    if edge > 0:
+      for k in range(edge):
+        idx = pos - k
+        if 0 <= idx < n:
+          scale = ((k + 1) * 256) // (edge + 1)
+          pixels[idx] = (
+            (color[0] * scale) >> 8,
+            (color[1] * scale) >> 8,
+            (color[2] * scale) >> 8,
+          )
+
+    next_pos = pos + step
+    done = (pos - edge) >= n if edge > 0 else next_pos >= n
+    if done:
+      next_pos = 0
+
+    if use_internal:
+      self._action_pos = next_pos
+    return next_pos, done
+
+  def shoot(self, color, pos=None, width=5, ramp=True, step=1, clear_bg=True, reverse=False):
+    """Move a pulse of `width` pixels across the strip by `step` pixels per frame.
+
+    Returns (next_pos, done). If pos is None, uses and updates self._action_pos.
+    """
+    use_internal = pos is None
+    if use_internal:
+      pos = self._action_pos if not reverse else self.n - 1 - self._action_pos
+
+    n = self.n
+    pixels = self.pixels
+    width = max(1, int(width))
+    step = max(1, int(step))
+
+    if clear_bg:
+      self.clear()
+
+    for k in range(width):
+      idx = pos + k if reverse else pos - k
+      if 0 <= idx < n:
+        if ramp and width > 1:
+          scale = ((width - k) * 256) // width
+          pixels[idx] = (
+            (color[0] * scale) >> 8,
+            (color[1] * scale) >> 8,
+            (color[2] * scale) >> 8,
+          )
+        else:
+          pixels[idx] = color
+
+    if reverse:
+      next_pos = pos - step
+      done = next_pos < -width
+      if done:
+        next_pos = n - 1
+    else:
+      next_pos = pos + step
+      done = next_pos >= n + width
+      if done:
+        next_pos = 0
+
+    if use_internal:
+      self._action_pos = (n - 1 - next_pos) if reverse else next_pos
+    return next_pos, done
 
   def render_frame(self):
     """Render a single frame into self.pixels. Return False to stop."""

@@ -67,7 +67,7 @@ def compile_templates():
         for f in files:
             if f.startswith('_'): continue
 
-            template = env.get_template(str(rel_dir / f))
+            template = env.get_template(str(rel_dir / f).replace('\\', '/'))
 
             output = template.render()
             output_file = pages_dir / rel_dir / f
@@ -101,7 +101,7 @@ def build_relative_d(files):
     dirs = {}
     for path in files:
         path_p = Path(path)
-        device_dir = './' + str(path_p.parent.relative_to(dist_dir)).replace('//', '/').strip('/') + '/'
+        device_dir = './' + str(path_p.parent.relative_to(dist_dir)).replace('//', '/').replace('\\', '/').strip('./') + '/'
         device_path = path_p.relative_to(dist_dir)
 
         dirs.setdefault(device_dir, []).append(path)

@@ -11,7 +11,7 @@ class RedGreenWipe(Pattern):
   def setup(self):
     self.colors = (RED, GREEN)
     self.color_idx = 0
-    self.pixel_idx = 0
+    self.pos = 0
     self.pause_frames = 0
 
   def render_frame(self):
@@ -19,10 +19,7 @@ class RedGreenWipe(Pattern):
       self.pause_frames -= 1
       return
 
-    self.pixels[self.pixel_idx] = self.colors[self.color_idx]
-    self.pixel_idx += 1
-
-    if self.pixel_idx >= self.n:
-      self.pixel_idx = 0
+    self.pos, done = self.wipe(self.colors[self.color_idx], pos=self.pos, edge=6, step=1)
+    if done:
       self.color_idx = (self.color_idx + 1) % len(self.colors)
       self.pause_frames = 13

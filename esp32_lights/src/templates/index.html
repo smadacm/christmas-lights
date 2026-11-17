@@ -5,19 +5,13 @@
 
   <div class="blocks">
     <div class="block">
-      <div class="block-title">Brightness: {brightness}%</div>
+      <div class="block-title">Mods</div>
       <div class="btn-row">
-        <a href="/brightness/down/5">-5%</a>
-        <a href="/brightness/down/1">-1%</a>
-        <a href="/brightness/up/1">+1%</a>
-        <a href="/brightness/up/5">+5%</a>
-      </div>
-      <div class="btn-row">
-        <a href="/brightness/set/5">5%</a>
-        <a href="/brightness/set/50">50%</a>
-        <a href="/brightness/set/100">100%</a>
+        {mod_toggles}
       </div>
     </div>
+
+    {mod_blocks}
 
     <div class="block">
       <div class="block-title">Timing: {sleep_modifier}x</div>
@@ -35,38 +29,6 @@
     </div>
 
     <div class="block">
-      <div class="block-title">Twinkle Mod: {twinkle_status}</div>
-      <div class="btn-row">
-        <a href="/mod/twinkle/toggle">Toggle Twinkle</a>
-      </div>
-      <form class="form-row" action="/mod/twinkle" method="get">
-        <label for="twinkle_count">LEDs:</label>
-        <input id="twinkle_count" type="number" name="count" value="{twinkle_count}" min="1" max="1000">
-        <label for="twinkle_speed">Frames:</label>
-        <input id="twinkle_speed" type="number" name="speed" value="{twinkle_speed}" min="1" max="1000">
-        <button type="submit">Set</button>
-      </form>
-    </div>
-
-    <div class="block">
-      <div class="block-title">Wave Mod: {wave_status}</div>
-      <div class="btn-row">
-        <a href="/mod/wave/off">Off</a>
-        <a href="/mod/wave/forward">Wave</a>
-        <a href="/mod/wave/reverse">Reverse Wave</a>
-      </div>
-      <form class="form-row" action="/mod/wave" method="get">
-        <label for="wave_min">Min%</label>
-        <input id="wave_min" type="number" name="min" value="{wave_min}" min="0" max="100">
-        <label for="wave_max">Max%</label>
-        <input id="wave_max" type="number" name="max" value="{wave_max}" min="0" max="100">
-        <label for="wave_width">Width</label>
-        <input id="wave_width" type="number" name="width" value="{wave_width}" min="2" max="1000">
-        <button type="submit">Set</button>
-      </form>
-    </div>
-
-    <div class="block">
       <div class="block-title">String Length</div>
       <form class="form-row" action="/string_length" method="get">
         <label for="length">LEDs:</label>
@@ -78,14 +40,7 @@
     <div class="block">
       <div class="block-title">Patterns</div>
       <ul class="buttons">
-        <li><a href="/candy_cane">Candy Cane</a></li>
-        <li><a href="/christmas_chase">Christmas Chase</a></li>
-        <li><a href="/red_green_wipe">Red Green Wipe</a></li>
-        <li><a href="/red_green_shooting">Red Green Shooting</a></li>
-        <li><a href="/rainbow">Rainbow</a></li>
-        <li><a href="/twinkle">Twinkle</a></li>
-        <li><a href="/super_twinkle">Super Twinkle</a></li>
-        <li><a href="/off">Off</a></li>
+        {pattern_buttons}
       </ul>
     </div>
   </div>

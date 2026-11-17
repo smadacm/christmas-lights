@@ -10,6 +10,7 @@ from patterns.off import Off
 from patterns.rainbow import Rainbow
 from patterns.red_green_shooting import RedGreenShooting
 from patterns.red_green_wipe import RedGreenWipe
+from patterns.red_green_wipe_shoot import RedGreenWipeShoot
 from patterns.super_twinkle import SuperTwinkle
 from patterns.twinkle import Twinkle
 
@@ -22,6 +23,7 @@ DEFAULT_PROGRAMS = (
   CandyCane,
   ChristmasChase,
   RedGreenWipe,
+  RedGreenWipeShoot,
   RedGreenShooting,
   Twinkle,
   SuperTwinkle,

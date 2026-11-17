@@ -8,6 +8,7 @@ class HttpRequest:
     await request.load_headers()
     if not request.header_lines:
       return None
+    await request.load_body()
     return request
 
   def __init__(self, reader=None):
@@ -60,6 +61,19 @@ class HttpRequest:
       for line in header_lines[1:]
       if b': ' in line
     ])
+
+  async def load_body(self):
+    content_length = 0
+    for k, v in self.headers.items():
+      if k.lower() == b'content-length':
+        try:
+          content_length = int(v)
+        except ValueError:
+          content_length = 0
+        break
+    if content_length > 0:
+      raw = await self.reader.readexactly(content_length)
+      self.body = raw.decode()
 
 
 response_404 = '\r\n'.join([

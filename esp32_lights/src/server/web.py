@@ -64,14 +64,14 @@ class Router:
     await writer.wait_closed()
     print('Client Disconnected')
 
-async def start_web_server(light_controller):
+async def start_web_server(light_controller, scheduler=None):
   print('start_web_server')
 
   wlan = network.WLAN(network.STA_IF)
 
   # setup router
   router = Router()
-  register_routes(router, light_controller)
+  register_routes(router, light_controller, scheduler=scheduler)
 
   # run server
   await asyncio.start_server(router.handle_request, LISTEN_HOST, LISTEN_PORT)

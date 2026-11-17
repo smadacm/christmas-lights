@@ -1,0 +1,34 @@
+{
+  "jobs": [
+    {
+      "name": "Evening Lights On",
+      "cron": "0 17 * * *",
+      "enabled": true,
+      "actions": [
+        {
+          "type": "mod",
+          "name": "brightness",
+          "params": {
+            "enabled": true,
+            "level": 50
+          }
+        },
+        {
+          "type": "program",
+          "name": "candy_cane"
+        }
+      ]
+    },
+    {
+      "name": "Night Lights Off",
+      "cron": "0 23 * * *",
+      "enabled": true,
+      "actions": [
+        {
+          "type": "program",
+          "name": "off"
+        }
+      ]
+    }
+  ]
+}

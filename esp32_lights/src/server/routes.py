@@ -1,3 +1,6 @@
+import json
+
+from scheduler import get_eastern_time
 from .models import HttpRequest, HttpResponse
 
 
@@ -100,7 +103,7 @@ def make_mod_toggle_handler(light_controller, mod_name: str):
   return handler
 
 
-def register_routes(router, light_controller):
+def register_routes(router, light_controller, scheduler=None):
   async def index(request: HttpRequest):
     pattern_buttons = '\n'.join(
       '<li><a href="{}">{}</a></li>'.format(
@@ -195,8 +198,49 @@ def register_routes(router, light_controller):
     resp.headers['Location'] = '/'
     return resp
 
+  async def schedule_page(request: HttpRequest):
+    programs = [
+      {'name': p.name, 'label': format_program_name(p.name)}
+      for p in light_controller.list_programs()
+    ]
+    mods = list(light_controller.mods.keys())
+    jobs = scheduler.load_jobs() if scheduler is not None else []
+    tm = get_eastern_time()
+    eastern_str = '{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'.format(
+      tm[0], tm[1], tm[2], tm[3], tm[4], tm[5]
+    )
+    return render_page('schedule.html', {
+      'programs_json': json.dumps(programs),
+      'mods_json': json.dumps(mods),
+      'schedule_json': json.dumps(jobs),
+      'eastern_time': eastern_str,
+    })
+
+  async def api_schedule(request: HttpRequest):
+    resp = HttpResponse()
+    if scheduler is None:
+      resp.status = 500
+      resp.data = {'error': 'Scheduler not initialized'}
+      return resp
+
+    if request.method == b'POST':
+      try:
+        payload = json.loads(request.body or '{}')
+        jobs = payload.get('jobs', [])
+        count = scheduler.save_jobs(jobs)
+        resp.data = {'ok': True, 'count': count}
+      except (ValueError, OSError) as exc:
+        resp.status = 400
+        resp.data = {'ok': False, 'error': str(exc)}
+      return resp
+
+    resp.data = {'jobs': scheduler.load_jobs()}
+    return resp
+
   # router.add_route(path, handler)
   router.add_route(b'/', index)
+  router.add_route(b'/schedule', schedule_page)
+  router.add_route(b'/api/schedule', api_schedule)
   router.add_route(b'/string_length', set_string_length)
   router.add_route(b'/timing', set_timing)
   router.add_route(b'/timing/set/0.5', make_timing_set_handler(light_controller, 0.5))

@@ -4,6 +4,7 @@ import machine
 import neopixel
 
 from controller import LightController
+from scheduler import CronScheduler
 from server.web import start_web_server
 
 PIN = 5  # D1 (ESP8266), D5 (ESP32)
@@ -23,7 +24,11 @@ async def main():
   controller = LightController(np, np_factory=create_np)
   initial_program = controller.load_config()
   controller.set_program(initial_program, save=False)
-  await start_web_server(controller)
+  scheduler = CronScheduler(controller)
+  await asyncio.gather(
+    start_web_server(controller, scheduler=scheduler),
+    scheduler.run(),
+  )
 
 
 asyncio.run(main())

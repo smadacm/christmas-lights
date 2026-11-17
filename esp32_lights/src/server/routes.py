@@ -9,7 +9,6 @@ pages_dir = './pages'
 
 def render_template_str(page_name: str, context=None):
   page = f'{pages_dir}/{page_name}'
-  print(f'{page_name} -- {page}')
   with open(page) as fd:
     content = fd.read()
 

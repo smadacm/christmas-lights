@@ -203,7 +203,7 @@ class Pattern:
 
   def get_sleep_ms(self):
     modifier = self._controller.sleep_modifier if self._controller is not None else 1.0
-    return max(1, int(round(self.sleep_ms * modifier)))
+    return max(10, int(round(self.sleep_ms * modifier)))
 
   async def run(self):
     while True:

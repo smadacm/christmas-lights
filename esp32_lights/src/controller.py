@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import json
 
 from patterns.basic import Basic
@@ -193,6 +194,10 @@ class LightController:
       self._task.cancel()
       self._task = None
 
+    if self._pattern is not None:
+      self._pattern = None
+      gc.collect()
+
     self.active_program = name
     self._task = asyncio.create_task(self._run_program(pattern_cls))
     if save:
@@ -200,10 +205,21 @@ class LightController:
     return True
 
   async def _run_program(self, pattern_cls):
+    pattern = None
     try:
-      self._pattern = pattern_cls(self.np, controller=self)
-      await self._pattern.run()
+      await asyncio.sleep_ms(0)
+      gc.collect()
+      pattern = pattern_cls(self.np, controller=self)
+      self._pattern = pattern
+      await pattern.run()
     except asyncio.CancelledError:
-      pass
+      if self._pattern is pattern:
+        self._pattern = None
+      pattern = None
+      gc.collect()
     except Exception as exc:
       print('Pattern error:', exc)
+      if self._pattern is pattern:
+        self._pattern = None
+      pattern = None
+      gc.collect()

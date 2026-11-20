@@ -211,6 +211,7 @@ class Pattern:
       if self._controller is not None:
         self._controller.step_modifications()
       self.write()
+      await asyncio.sleep_ms(0)
       if not self.loop or keep_going is False:
         break
       await asyncio.sleep_ms(self.get_sleep_ms())

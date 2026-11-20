@@ -20,6 +20,7 @@ class Router:
   def __init__(self):
     print('init router')
     self.routes = {}
+    self._lock = asyncio.Lock()
 
   async def __aenter__(self):
       return srv
@@ -42,27 +43,34 @@ class Router:
     return response
   
   async def handle_request(self, reader, writer):
-    print('handle request')
-    request = await HttpRequest.from_reader(reader)
-    if request is None:
-      writer.close()
-      await writer.wait_closed()
-      print('Empty request / Client Disconnected')
-      return
+    async with self._lock:
+      print('handle request')
+      try:
+        request = await HttpRequest.from_reader(reader)
+        if request is None:
+          print('Empty request / Client Disconnected')
+          return
 
-    print('Request:', request)
-    
-    handler = self.routes.get(request.path, self.handle_404)
-    # print('Handler:', handler.__name__)
-    response = await handler(request)
+        print('Request:', request)
 
-    if type(response) != HttpResponse:
-      response = self.handle_500(request, 'Handler did not return a response object')
+        handler = self.routes.get(request.path, self.handle_404)
+        # print('Handler:', handler.__name__)
+        response = await handler(request)
 
-    writer.write(response.render())
-    await writer.drain()
-    await writer.wait_closed()
-    print('Client Disconnected')
+        if type(response) != HttpResponse:
+          response = self.handle_500(request, 'Handler did not return a response object')
+
+        writer.write(response.render())
+        await writer.drain()
+      except OSError as exc:
+        print('Client connection error:', exc)
+      finally:
+        try:
+          writer.close()
+          await writer.wait_closed()
+        except OSError:
+          pass
+        print('Client Disconnected')
 
 async def start_web_server(light_controller, scheduler=None):
   print('start_web_server')

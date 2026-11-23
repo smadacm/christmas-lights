@@ -8,23 +8,12 @@ LISTEN_HOST = '0.0.0.0'
 LISTEN_PORT = 80
 
 
-response_404 = '\r\n'.join([
-  'HTTP/1.1 404 Not Found',
-  'Content-Type: text/html',
-  'Content-Length: 0',
-  'Connection: close',
-])
-
-
 class Router:
   def __init__(self):
     print('init router')
     self.routes = {}
     self._lock = asyncio.Lock()
 
-  async def __aenter__(self):
-      return srv
-  
   def add_route(self, path, handler):
     self.routes[path] = handler
 
@@ -72,14 +61,14 @@ class Router:
           pass
         print('Client Disconnected')
 
-async def start_web_server(light_controller, scheduler=None):
+async def start_web_server(light_controller):
   print('start_web_server')
 
   wlan = network.WLAN(network.STA_IF)
 
   # setup router
   router = Router()
-  register_routes(router, light_controller, scheduler=scheduler)
+  register_routes(router, light_controller)
 
   # run server
   await asyncio.start_server(router.handle_request, LISTEN_HOST, LISTEN_PORT)

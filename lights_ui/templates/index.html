@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Christmas Lights Controller</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  background-color: #eee;
+  font-family: Tahoma, Arial, sans-serif;
+  margin: 0;
+  padding: 1em;
+}
+.header {
+  background-color: #333;
+  color: #fff;
+  padding: 0.85em 1em;
+  border-radius: 6px;
+  font-size: 1.3em;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 1em;
+}
+.blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  align-items: flex-start;
+}
+.block {
+  flex: 1 1 340px;
+  border: 2px solid #bbb;
+  border-radius: 6px;
+  padding: 0.9em;
+  background-color: #f8f8f8;
+}
+.block-title {
+  margin: 0 0 0.75em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid #ddd;
+  font-size: 1.1em;
+  font-weight: bold;
+  color: #333;
+  text-align: center;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin: 0.6em 0;
+  align-items: center;
+}
+input, select {
+  padding: 0.55em;
+  font-size: 0.95em;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  flex: 1 1 90px;
+}
+button {
+  padding: 0.6em 1em;
+  background-color: #666;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+}
+button.primary { background-color: #2b6cb0; }
+button.danger { background-color: #c53030; }
+button.active-client { background-color: #2f855a; }
+.client-item {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.6em;
+  margin-bottom: 0.5em;
+  background: #fff;
+}
+.action-card {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.6em;
+  margin-bottom: 0.6em;
+  background: #fff;
+}
+.status {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: #333;
+  margin: 0.4em 0;
+}
+</style>
+</head>
+<body>
+  <div class="header">
+    Christmas Lights Controller
+    <div style="margin-top:0.5em;font-size:0.75em;">
+      <a href="/schedule" style="color:#fff;text-decoration:underline;margin-right:1em;">Open Schedule Builder</a>
+      <button onclick="reloadUI()" style="padding:0.3em 0.7em;font-size:0.9em;">Reload UI Code</button>
+    </div>
+  </div>
+
+  <div class="blocks">
+    <div class="block">
+      <div class="block-title">Remote Workers</div>
+      <div class="row">
+        <input id="client-name" type="text" placeholder="Name (e.g. Front Tree)">
+        <input id="client-url" type="text" placeholder="URL (e.g. http://192.168.1.50)">
+        <button class="primary" onclick="addClient()">Add</button>
+      </div>
+      <div id="clients-list"></div>
+    </div>
+
+    <div class="block">
+      <div class="block-title" id="editor-title">Select a Worker</div>
+      <div id="worker-status" class="status"></div>
+
+      <div id="editor-body" style="display:none;">
+        <div class="row">
+          <label>LEDs:</label>
+          <input id="cfg-length" type="number" min="1" max="1000" value="220">
+          <label>Speed:</label>
+          <input id="cfg-speed" type="number" min="0.001" max="10" step="0.001" value="1">
+        </div>
+
+        <div class="block-title" style="margin-top:0.8em;">Action Pipeline</div>
+        <div id="actions-list"></div>
+
+        <div class="row">
+          <select id="add-action-select"></select>
+          <button onclick="addAction()">+ Add Action</button>
+        </div>
+
+        <div class="row">
+          <button class="primary" style="flex:1;" onclick="pushConfig()">Apply to Worker</button>
+          <button style="flex:1;" onclick="reloadWorker()">Reload Worker Config</button>
+          <button style="flex:1;" onclick="refreshSelectedClient()">Fetch Config</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let clients = {{ clients_json | safe }};
+    const AVAILABLE_ACTIONS = {{ actions_json | safe }};
+    let selectedClientId = clients.length ? clients[0].id : null;
+    let currentConfig = { string_length: 220, sleep_modifier: 1.0, actions: [] };
+
+    function populateActionSelect() {
+      const sel = document.getElementById('add-action-select');
+      sel.innerHTML = AVAILABLE_ACTIONS.map((a, i) =>
+        `<option value="${i}">${a.label} (${a.kind})</option>`
+      ).join('');
+    }
+
+    function renderClients() {
+      const container = document.getElementById('clients-list');
+      if (!clients.length) {
+        container.innerHTML = '<div class="status">No remote workers added yet.</div>';
+        return;
+      }
+      container.innerHTML = clients.map(c => `
+        <div class="client-item">
+          <div class="row" style="justify-content:space-between; margin:0;">
+            <div>
+              <strong>${c.name}</strong><br>
+              <small>${c.url}</small>
+            </div>
+            <div class="row" style="margin:0;">
+              <button class="${c.id === selectedClientId ? 'active-client' : ''}" onclick="selectClient('${c.id}')">Select</button>
+              <button class="danger" onclick="deleteClient('${c.id}')">Delete</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderPaletteEditor(idx, palette, defaultPal) {
+      const pal = Array.isArray(palette) && palette.length ? palette : defaultPal;
+      const swatches = pal.map((hex, cIdx) => `
+        <span style="display:inline-flex;align-items:center;gap:0.2em;">
+          <input type="color" value="${hex}" style="flex:0 0 38px;padding:0.15em;height:32px;" onchange="updatePaletteColor(${idx}, ${cIdx}, this.value)">
+          ${pal.length > 1 ? `<button type="button" class="danger" style="padding:0.25em 0.5em;" onclick="removePaletteColor(${idx}, ${cIdx})">x</button>` : ''}
+        </span>
+      `).join('');
+      return `
+        <div class="row" style="flex:1 1 100%;margin:0.3em 0 0;">
+          <span>Palette:</span>
+          ${swatches}
+          <button type="button" onclick="addPaletteColor(${idx})">+ Color</button>
+        </div>
+      `;
+    }
+
+    function renderParamInputs(action, idx) {
+      const p = action.params || {};
+      if (action.name === 'chase') {
+        return `
+          <label>Block</label>
+          <input type="number" min="1" max="1000" value="${p.block_size ?? 1}" onchange="updateParam(${idx}, 'block_size', Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 180}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+          ${renderPaletteEditor(idx, p.palette, ['#ff0000', '#00ff00', '#ffffff'])}
+        `;
+      }
+      if (action.name === 'wipe') {
+        return `
+          <label>Edge</label>
+          <input type="number" min="0" max="100" value="${p.edge ?? 6}" onchange="updateParam(${idx}, 'edge', Number(this.value))">
+          <label>Step</label>
+          <input type="number" min="1" max="100" value="${p.step ?? 1}" onchange="updateParam(${idx}, 'step', Number(this.value))">
+          <label>Pause</label>
+          <input type="number" min="0" max="1000" value="${p.pause_frames ?? 13}" onchange="updateParam(${idx}, 'pause_frames', Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 15}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+          ${renderPaletteEditor(idx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'shooting') {
+        return `
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 25}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+          ${renderPaletteEditor(idx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'wipe_shoot') {
+        return `
+          <label>Shoots</label>
+          <input type="number" min="1" max="100" value="${p.shoot_count ?? 3}" onchange="updateParam(${idx}, 'shoot_count', Number(this.value))">
+          <label>Edge</label>
+          <input type="number" min="0" max="100" value="${p.edge ?? 6}" onchange="updateParam(${idx}, 'edge', Number(this.value))">
+          <label>Wipe Step</label>
+          <input type="number" min="1" max="100" value="${p.wipe_step ?? 2}" onchange="updateParam(${idx}, 'wipe_step', Number(this.value))">
+          <label>Width</label>
+          <input type="number" min="1" max="100" value="${p.shoot_width ?? 10}" onchange="updateParam(${idx}, 'shoot_width', Number(this.value))">
+          <label>Shoot Step</label>
+          <input type="number" min="1" max="100" value="${p.shoot_step ?? 3}" onchange="updateParam(${idx}, 'shoot_step', Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 15}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+          ${renderPaletteEditor(idx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'twinkle') {
+        return `
+          <label>Spawn</label>
+          <input type="number" min="1" max="1000" value="${p.spawn_count ?? 3}" onchange="updateParam(${idx}, 'spawn_count', Number(this.value))">
+          <label>Fade</label>
+          <input type="number" min="1" max="255" value="${p.fade_step ?? 16}" onchange="updateParam(${idx}, 'fade_step', Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 40}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+          ${renderPaletteEditor(idx, p.palette, ['#ff0000', '#00ff00', '#ffffff', '#ffb400'])}
+        `;
+      }
+      if (action.name === 'rainbow') {
+        return `
+          <label>Step</label>
+          <input type="number" min="1" max="255" value="${p.step ?? 8}" onchange="updateParam(${idx}, 'step', Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 50}" onchange="updateParam(${idx}, 'sleep_ms', Number(this.value))">
+        `;
+      }
+      if (action.name === 'brightness') {
+        return `
+          <label>Level%</label>
+          <input type="number" min="0" max="100" value="${p.level ?? 50}" onchange="updateParam(${idx}, 'level', Number(this.value))">
+        `;
+      }
+      if (action.name === 'twinkle_mod') {
+        return `
+          <label>LEDs</label>
+          <input type="number" min="1" max="1000" value="${p.count ?? 5}" onchange="updateParam(${idx}, 'count', Number(this.value))">
+          <label>Frames</label>
+          <input type="number" min="1" max="1000" value="${p.speed ?? 1}" onchange="updateParam(${idx}, 'speed', Number(this.value))">
+        `;
+      }
+      if (action.name === 'wave') {
+        return `
+          <select onchange="updateParam(${idx}, 'direction', Number(this.value))">
+            <option value="1" ${p.direction === 1 ? 'selected' : ''}>Wave</option>
+            <option value="-1" ${p.direction === -1 ? 'selected' : ''}>Reverse Wave</option>
+            <option value="0" ${p.direction === 0 ? 'selected' : ''}>Off</option>
+          </select>
+          <label>Min%</label>
+          <input type="number" min="0" max="100" value="${p.min_brightness ?? 20}" onchange="updateParam(${idx}, 'min_brightness', Number(this.value))">
+          <label>Max%</label>
+          <input type="number" min="0" max="100" value="${p.max_brightness ?? 100}" onchange="updateParam(${idx}, 'max_brightness', Number(this.value))">
+          <label>Width</label>
+          <input type="number" min="2" max="1000" value="${p.width ?? 20}" onchange="updateParam(${idx}, 'width', Number(this.value))">
+        `;
+      }
+      return '';
+    }
+
+    function renderActions() {
+      const list = document.getElementById('actions-list');
+      const actions = currentConfig.actions || [];
+      if (!actions.length) {
+        list.innerHTML = '<div class="status">No actions configured.</div>';
+        return;
+      }
+      list.innerHTML = actions.map((act, idx) => `
+        <div class="action-card">
+          <div class="row" style="justify-content:space-between; margin:0 0 0.4em;">
+            <strong>${idx + 1}. ${act.name}</strong>
+            <div class="row" style="margin:0;">
+              <button onclick="moveAction(${idx}, -1)">&uarr;</button>
+              <button onclick="moveAction(${idx}, 1)">&darr;</button>
+              <button class="danger" onclick="removeAction(${idx})">X</button>
+            </div>
+          </div>
+          <div class="row" style="margin:0;">${renderParamInputs(act, idx)}</div>
+        </div>
+      `).join('');
+    }
+
+    async function selectClient(id) {
+      selectedClientId = id;
+      renderClients();
+      await refreshSelectedClient();
+    }
+
+    async function refreshSelectedClient() {
+      const client = clients.find(c => c.id === selectedClientId);
+      const title = document.getElementById('editor-title');
+      const status = document.getElementById('worker-status');
+      const body = document.getElementById('editor-body');
+
+      if (!client) {
+        title.textContent = 'Select a Worker';
+        status.textContent = '';
+        body.style.display = 'none';
+        return;
+      }
+
+      title.textContent = `Worker: ${client.name}`;
+      status.textContent = 'Connecting...';
+      body.style.display = 'block';
+
+      try {
+        const [infoRes, cfgRes] = await Promise.all([
+          fetch(`/api/clients/${client.id}/status`),
+          fetch(`/api/clients/${client.id}/lights`),
+        ]);
+        const infoData = await infoRes.json();
+        const cfgData = await cfgRes.json();
+
+        if (infoData.online && infoData.info) {
+          status.textContent = `Online: ${infoData.info.name} (${infoData.info.version})`;
+        } else {
+          status.textContent = `Offline: ${infoData.error || 'Unreachable'}`;
+        }
+
+        if (cfgRes.ok && cfgData.actions) {
+          currentConfig = cfgData;
+          document.getElementById('cfg-length').value = currentConfig.string_length ?? 220;
+          document.getElementById('cfg-speed').value = currentConfig.sleep_modifier ?? 1.0;
+          renderActions();
+        }
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    async function addClient() {
+      const name = document.getElementById('client-name').value.trim();
+      const url = document.getElementById('client-url').value.trim();
+      if (!name || !url) return;
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        clients = data.clients;
+        document.getElementById('client-name').value = '';
+        document.getElementById('client-url').value = '';
+        await selectClient(data.client.id);
+      }
+    }
+
+    async function deleteClient(id) {
+      const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        clients = data.clients;
+        if (selectedClientId === id) {
+          selectedClientId = clients.length ? clients[0].id : null;
+        }
+        renderClients();
+        await refreshSelectedClient();
+      }
+    }
+
+    function addAction() {
+      const selIdx = Number(document.getElementById('add-action-select').value);
+      const spec = AVAILABLE_ACTIONS[selIdx];
+      if (!spec) return;
+      if (!currentConfig.actions) currentConfig.actions = [];
+      currentConfig.actions.push({
+        name: spec.name,
+        params: JSON.parse(JSON.stringify(spec.params || {})),
+      });
+      renderActions();
+    }
+
+    function updateParam(idx, key, val) {
+      if (!currentConfig.actions[idx].params) currentConfig.actions[idx].params = {};
+      currentConfig.actions[idx].params[key] = val;
+    }
+
+    function ensurePalette(idx) {
+      if (!currentConfig.actions[idx].params) currentConfig.actions[idx].params = {};
+      if (!Array.isArray(currentConfig.actions[idx].params.palette)) {
+        currentConfig.actions[idx].params.palette = ['#ff0000', '#00ff00'];
+      }
+      return currentConfig.actions[idx].params.palette;
+    }
+
+    function updatePaletteColor(idx, cIdx, hex) {
+      ensurePalette(idx)[cIdx] = hex;
+    }
+
+    function addPaletteColor(idx) {
+      ensurePalette(idx).push('#ffffff');
+      renderActions();
+    }
+
+    function removePaletteColor(idx, cIdx) {
+      const pal = ensurePalette(idx);
+      if (pal.length > 1) {
+        pal.splice(cIdx, 1);
+        renderActions();
+      }
+    }
+
+    function moveAction(idx, delta) {
+      const target = idx + delta;
+      if (target < 0 || target >= currentConfig.actions.length) return;
+      const tmp = currentConfig.actions[idx];
+      currentConfig.actions[idx] = currentConfig.actions[target];
+      currentConfig.actions[target] = tmp;
+      renderActions();
+    }
+
+    function removeAction(idx) {
+      currentConfig.actions.splice(idx, 1);
+      renderActions();
+    }
+
+    async function pushConfig() {
+      if (!selectedClientId) return;
+      const status = document.getElementById('worker-status');
+      currentConfig.string_length = Number(document.getElementById('cfg-length').value) || 220;
+      currentConfig.sleep_modifier = Number(document.getElementById('cfg-speed').value) || 1.0;
+
+      status.textContent = 'Sending config to worker...';
+      try {
+        const res = await fetch(`/api/clients/${selectedClientId}/lights`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentConfig),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          currentConfig = data;
+          renderActions();
+          status.textContent = 'Updated worker configuration!';
+        } else {
+          status.textContent = 'Worker error: ' + (data.error || res.status);
+        }
+      } catch (err) {
+        status.textContent = 'Failed to reach worker: ' + err.message;
+      }
+    }
+
+    async function reloadWorker() {
+      if (!selectedClientId) return;
+      const status = document.getElementById('worker-status');
+      status.textContent = 'Reloading worker...';
+      try {
+        const res = await fetch(`/api/clients/${selectedClientId}/reload`, {
+          method: 'POST',
+        });
+        const data = await res.json();
+        if (res.ok) {
+          currentConfig = data;
+          document.getElementById('cfg-length').value = currentConfig.string_length ?? 220;
+          document.getElementById('cfg-speed').value = currentConfig.sleep_modifier ?? 1.0;
+          renderActions();
+          status.textContent = 'Worker reloaded!';
+        } else {
+          status.textContent = 'Worker error: ' + (data.error || res.status);
+        }
+      } catch (err) {
+        status.textContent = 'Failed to reach worker: ' + err.message;
+      }
+    }
+
+    async function reloadUI() {
+      const status = document.getElementById('worker-status');
+      if (status) status.textContent = 'Reloading UI app...';
+      try {
+        await fetch('/api/reload', { method: 'POST' });
+      } catch (err) {
+      }
+      setTimeout(() => window.location.reload(), 1200);
+    }
+
+    populateActionSelect();
+    renderClients();
+    if (selectedClientId) refreshSelectedClient();
+  </script>
+</body>
+</html>

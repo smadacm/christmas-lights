@@ -1,7 +1,4 @@
-from patterns.base import Pattern
-
-RAINBOW_STEP = 8
-RAINBOW_SLEEP = 50
+from patterns.base import Action
 
 
 def _wheel(pos):
@@ -16,18 +13,26 @@ def _wheel(pos):
   return (0, pos * 3, 255 - pos * 3)
 
 
-class Rainbow(Pattern):
+class Rainbow(Action):
   name = 'rainbow'
-  path = '/rainbow'
-  sleep_ms = RAINBOW_SLEEP
 
   def setup(self):
     self.offset = 0
 
-  def render_frame(self):
+  def configure(self, step=8, sleep_ms=50, **kwargs):
+    self.step = max(1, min(255, int(step)))
+    self.sleep_ms = max(1, int(sleep_ms))
+
+  def get_params(self):
+    return {
+      'step': self.step,
+      'sleep_ms': self.sleep_ms,
+    }
+
+  def apply(self, pixels):
     n = self.n
-    pixels = self.pixels
     offset = self.offset
     for i in range(n):
       pixels[i] = _wheel((i * 256 // n + offset) & 255)
-    self.offset = (offset + RAINBOW_STEP) & 255
+    self.offset = (offset + self.step) & 255
+    return pixels

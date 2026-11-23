@@ -1,0 +1,16 @@
+services:
+  lights-ui:
+    image: python:3.13-slim
+    container_name: lights-ui
+    working_dir: /app
+    command: ["sh", "/app/start.sh"]
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - TZ=America/New_York
+      - PYTHONUNBUFFERED=1
+      - DATA_DIR=/app/data
+    volumes:
+      - .:/app
+    restart: unless-stopped

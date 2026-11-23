@@ -1,10 +1,10 @@
-from patterns.base import Pattern
+from patterns.base import Action
 
 
-class Off(Pattern):
+class Off(Action):
   name = 'off'
-  path = '/off'
   loop = False
 
-  def render_frame(self):
-    self.clear()
+  def apply(self, pixels):
+    self.clear(pixels)
+    return pixels

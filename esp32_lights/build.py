@@ -3,8 +3,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 
-from jinja2 import Environment, FileSystemLoader
 from mpremote.commands import do_filesystem_cp, do_connect
 from mpremote.main import State
 
@@ -14,9 +15,6 @@ here = Path(__file__).parent.resolve()
 hash_file = here / 'hashes.json'
 src_dir = here / 'src'
 dist_dir = here / 'dist'
-
-templates_dir = src_dir / 'templates'
-pages_dir = dist_dir / 'pages'
 
 
 def mkdir_p(dir_name):
@@ -56,38 +54,40 @@ class FileHashCache:
                 differing_hashes.append(filename)
         return differing_hashes
 
-def compile_templates():
-    env = Environment(loader=FileSystemLoader(str(templates_dir)))
+KEEP_AS_PY = {'boot.py', 'main.py'}
 
-    for path, dirs, files in templates_dir.walk():
-        rel_dir = path.relative_to(templates_dir)
-        # print(path.relative_to(templates_dir))
-        # print(files)
-        # print(dirs)
-        for f in files:
-            if f.startswith('_'): continue
 
-            template = env.get_template(str(rel_dir / f).replace('\\', '/'))
+def get_mpy_cross_bin():
+    exe_name = 'mpy-cross.exe' if os.name == 'nt' else 'mpy-cross'
+    candidate = Path(sys.executable).parent / exe_name
+    if candidate.exists():
+        return str(candidate)
+    return 'mpy-cross'
 
-            output = template.render()
-            output_file = pages_dir / rel_dir / f
-            mkdir_p(output_file.parent)     
 
-            with output_file.open('w') as fd:
-                fd.write(output)
+def compile_mpy(src_path: Path, dst_path: Path):
+    mpy_cross_bin = get_mpy_cross_bin()
+    subprocess.run(
+        [mpy_cross_bin, '-o', str(dst_path), str(src_path)],
+        check=True,
+    )
+
 
 def build_dist():
-    templates_dir_s = str(templates_dir)
     for path, dirs, files in src_dir.walk():
-        if str(path).startswith(templates_dir_s): continue
         if '__pycache__' in str(path).lower(): continue
 
-        target_dir = dist_dir / Path(path).relative_to(src_dir)
+        rel_dir = Path(path).relative_to(src_dir)
+        target_dir = dist_dir / rel_dir
         if files:
             mkdir_p(target_dir)
         for f in files:
-            # filter
-            shutil.copyfile(path / f, target_dir / f)
+            src_file = path / f
+            if f.endswith('.py') and not (rel_dir == Path('.') and f in KEEP_AS_PY):
+                mpy_name = Path(f).with_suffix('.mpy').name
+                compile_mpy(src_file, target_dir / mpy_name)
+            else:
+                shutil.copyfile(src_file, target_dir / f)
 
 def get_board_conn():
     state = State()
@@ -128,10 +128,11 @@ def go():
     old_cache = FileHashCache(hash_file_path=hash_file)
     old_cache.load_hash_file()
 
-    # compile templates
-    compile_templates()
+    # clean dist so stale .py files don't remain alongside .mpy
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir)
 
-    # copy files to dist
+    # copy/compile files to dist
     build_dist()
 
     # build hashes of all files

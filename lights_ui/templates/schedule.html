@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schedule Builder - Christmas Lights</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  background-color: #eee;
+  font-family: Tahoma, Arial, sans-serif;
+  margin: 0;
+  padding: 1em;
+}
+.header {
+  background-color: #333;
+  color: #fff;
+  padding: 0.85em 1em;
+  border-radius: 6px;
+  font-size: 1.3em;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 1em;
+}
+.blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  align-items: flex-start;
+}
+.block {
+  flex: 1 1 360px;
+  border: 2px solid #bbb;
+  border-radius: 6px;
+  padding: 0.9em;
+  background-color: #f8f8f8;
+}
+.block-title {
+  margin: 0 0 0.75em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid #ddd;
+  font-size: 1.1em;
+  font-weight: bold;
+  color: #333;
+  text-align: center;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin: 0.6em 0;
+  align-items: center;
+}
+input, select {
+  padding: 0.5em;
+  font-size: 0.95em;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  flex: 1 1 80px;
+}
+input[type="checkbox"] {
+  flex: 0 0 auto;
+}
+button, a.btn {
+  padding: 0.6em 1em;
+  background-color: #666;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+}
+button.primary { background-color: #2b6cb0; }
+button.danger { background-color: #c53030; }
+.action-card {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.55em;
+  margin-bottom: 0.5em;
+  background: #fff;
+}
+.status {
+  font-size: 0.95em;
+  font-weight: bold;
+  color: #333;
+  margin: 0.5em 0;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+  <div class="header">Schedule Builder</div>
+
+  <div class="row" style="justify-content:center;">
+    <a class="btn" href="/">&larr; Back to Workers</a>
+    <button class="primary" onclick="addJob()">+ Add Job</button>
+    <button class="primary" onclick="saveSchedule()">Save Schedule</button>
+    <button onclick="reloadUI()">Reload UI Code</button>
+  </div>
+
+  <div id="save-status" class="status"></div>
+  <div id="jobs-container" class="blocks"></div>
+
+  <script>
+    const CLIENTS = {{ clients_json | safe }};
+    const AVAILABLE_ACTIONS = {{ actions_json | safe }};
+    let jobs = {{ jobs_json | safe }};
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    function parseCron(cron) {
+      const parts = (cron || '0 17 * * *').trim().split(/\s+/);
+      const min = parseInt(parts[0], 10);
+      const hr = parseInt(parts[1], 10);
+      const wday = parts[4] || '*';
+      const timeValid = !isNaN(min) && !isNaN(hr) && parts[0] !== '*' && parts[1] !== '*';
+      const hh = timeValid ? String(hr).padStart(2, '0') : '17';
+      const mm = timeValid ? String(min).padStart(2, '0') : '00';
+
+      let days = [];
+      if (wday === '*') {
+        days = [0, 1, 2, 3, 4, 5, 6];
+      } else {
+        wday.split(',').forEach(p => {
+          if (p.includes('-')) {
+            const [a, b] = p.split('-').map(n => parseInt(n, 10));
+            for (let d = a; d <= b; d++) days.push(d === 7 ? 0 : d);
+          } else {
+            const d = parseInt(p, 10);
+            if (!isNaN(d)) days.push(d === 7 ? 0 : d);
+          }
+        });
+      }
+      return { time: hh + ':' + mm, days };
+    }
+
+    function buildCron(timeStr, days) {
+      const [hh, mm] = (timeStr || '17:00').split(':').map(n => parseInt(n, 10) || 0);
+      const uniqueDays = [...new Set(days)].sort((a, b) => a - b);
+      const wday = (uniqueDays.length === 0 || uniqueDays.length === 7) ? '*' : uniqueDays.join(',');
+      return `${mm} ${hh} * * ${wday}`;
+    }
+
+    function renderPaletteEditor(jobIdx, actIdx, palette, defaultPal) {
+      const pal = Array.isArray(palette) && palette.length ? palette : defaultPal;
+      const swatches = pal.map((hex, cIdx) => `
+        <span style="display:inline-flex;align-items:center;gap:0.2em;">
+          <input type="color" value="${hex}" style="flex:0 0 38px;padding:0.15em;height:32px;" onchange="updatePaletteColor(${jobIdx},${actIdx},${cIdx},this.value)">
+          ${pal.length > 1 ? `<button type="button" class="danger" style="padding:0.25em 0.5em;" onclick="removePaletteColor(${jobIdx},${actIdx},${cIdx})">x</button>` : ''}
+        </span>
+      `).join('');
+      return `
+        <div class="row" style="flex:1 1 100%;margin:0.3em 0 0;">
+          <span>Palette:</span>
+          ${swatches}
+          <button type="button" onclick="addPaletteColor(${jobIdx},${actIdx})">+ Color</button>
+        </div>
+      `;
+    }
+
+    function renderParamInputs(action, jobIdx, actIdx) {
+      const p = action.params || {};
+      if (action.name === 'chase') {
+        return `
+          <label>Block</label>
+          <input type="number" min="1" max="1000" value="${p.block_size ?? 1}" onchange="updateParam(${jobIdx},${actIdx},'block_size',Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 180}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+          ${renderPaletteEditor(jobIdx, actIdx, p.palette, ['#ff0000', '#00ff00', '#ffffff'])}
+        `;
+      }
+      if (action.name === 'wipe') {
+        return `
+          <label>Edge</label>
+          <input type="number" min="0" max="100" value="${p.edge ?? 6}" onchange="updateParam(${jobIdx},${actIdx},'edge',Number(this.value))">
+          <label>Step</label>
+          <input type="number" min="1" max="100" value="${p.step ?? 1}" onchange="updateParam(${jobIdx},${actIdx},'step',Number(this.value))">
+          <label>Pause</label>
+          <input type="number" min="0" max="1000" value="${p.pause_frames ?? 13}" onchange="updateParam(${jobIdx},${actIdx},'pause_frames',Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 15}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+          ${renderPaletteEditor(jobIdx, actIdx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'shooting') {
+        return `
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 25}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+          ${renderPaletteEditor(jobIdx, actIdx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'wipe_shoot') {
+        return `
+          <label>Shoots</label>
+          <input type="number" min="1" max="100" value="${p.shoot_count ?? 3}" onchange="updateParam(${jobIdx},${actIdx},'shoot_count',Number(this.value))">
+          <label>Edge</label>
+          <input type="number" min="0" max="100" value="${p.edge ?? 6}" onchange="updateParam(${jobIdx},${actIdx},'edge',Number(this.value))">
+          <label>Wipe Step</label>
+          <input type="number" min="1" max="100" value="${p.wipe_step ?? 2}" onchange="updateParam(${jobIdx},${actIdx},'wipe_step',Number(this.value))">
+          <label>Width</label>
+          <input type="number" min="1" max="100" value="${p.shoot_width ?? 10}" onchange="updateParam(${jobIdx},${actIdx},'shoot_width',Number(this.value))">
+          <label>Shoot Step</label>
+          <input type="number" min="1" max="100" value="${p.shoot_step ?? 3}" onchange="updateParam(${jobIdx},${actIdx},'shoot_step',Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 15}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+          ${renderPaletteEditor(jobIdx, actIdx, p.palette, ['#ff0000', '#00ff00'])}
+        `;
+      }
+      if (action.name === 'twinkle') {
+        return `
+          <label>Spawn</label>
+          <input type="number" min="1" max="1000" value="${p.spawn_count ?? 3}" onchange="updateParam(${jobIdx},${actIdx},'spawn_count',Number(this.value))">
+          <label>Fade</label>
+          <input type="number" min="1" max="255" value="${p.fade_step ?? 16}" onchange="updateParam(${jobIdx},${actIdx},'fade_step',Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 40}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+          ${renderPaletteEditor(jobIdx, actIdx, p.palette, ['#ff0000', '#00ff00', '#ffffff', '#ffb400'])}
+        `;
+      }
+      if (action.name === 'rainbow') {
+        return `
+          <label>Step</label>
+          <input type="number" min="1" max="255" value="${p.step ?? 8}" onchange="updateParam(${jobIdx},${actIdx},'step',Number(this.value))">
+          <label>Sleep(ms)</label>
+          <input type="number" min="1" max="10000" value="${p.sleep_ms ?? 50}" onchange="updateParam(${jobIdx},${actIdx},'sleep_ms',Number(this.value))">
+        `;
+      }
+      if (action.name === 'brightness') {
+        return `
+          <label>Level%</label>
+          <input type="number" min="0" max="100" value="${p.level ?? 50}" onchange="updateParam(${jobIdx},${actIdx},'level',Number(this.value))">
+        `;
+      }
+      if (action.name === 'twinkle_mod') {
+        return `
+          <label>LEDs</label>
+          <input type="number" min="1" max="1000" value="${p.count ?? 5}" onchange="updateParam(${jobIdx},${actIdx},'count',Number(this.value))">
+          <label>Frames</label>
+          <input type="number" min="1" max="1000" value="${p.speed ?? 1}" onchange="updateParam(${jobIdx},${actIdx},'speed',Number(this.value))">
+        `;
+      }
+      if (action.name === 'wave') {
+        return `
+          <select onchange="updateParam(${jobIdx},${actIdx},'direction',Number(this.value))">
+            <option value="1" ${p.direction === 1 ? 'selected' : ''}>Wave</option>
+            <option value="-1" ${p.direction === -1 ? 'selected' : ''}>Reverse Wave</option>
+            <option value="0" ${p.direction === 0 ? 'selected' : ''}>Off</option>
+          </select>
+          <label>Min%</label>
+          <input type="number" min="0" max="100" value="${p.min_brightness ?? 20}" onchange="updateParam(${jobIdx},${actIdx},'min_brightness',Number(this.value))">
+          <label>Max%</label>
+          <input type="number" min="0" max="100" value="${p.max_brightness ?? 100}" onchange="updateParam(${jobIdx},${actIdx},'max_brightness',Number(this.value))">
+          <label>Width</label>
+          <input type="number" min="2" max="1000" value="${p.width ?? 20}" onchange="updateParam(${jobIdx},${actIdx},'width',Number(this.value))">
+        `;
+      }
+      return '';
+    }
+
+    function render() {
+      const container = document.getElementById('jobs-container');
+      container.innerHTML = '';
+
+      jobs.forEach((job, jobIdx) => {
+        if (!job.config) job.config = { sleep_modifier: 1.0, actions: [] };
+        const parsed = parseCron(job.cron);
+        const card = document.createElement('div');
+        card.className = 'block';
+
+        const clientOpts = `<option value="all" ${!job.client_id || job.client_id === 'all' ? 'selected' : ''}>All Workers</option>` +
+          CLIENTS.map(c => `<option value="${c.id}" ${job.client_id === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+
+        const dayCheckboxes = DAYS.map((label, dIdx) => `
+          <label style="margin-right:0.4em;">
+            <input type="checkbox" ${parsed.days.includes(dIdx) ? 'checked' : ''} onchange="toggleDay(${jobIdx},${dIdx},this.checked)"> ${label}
+          </label>
+        `).join('');
+
+        const actionsHtml = (job.config.actions || []).map((act, actIdx) => `
+          <div class="action-card">
+            <div class="row" style="justify-content:space-between; margin:0 0 0.4em;">
+              <strong>${actIdx + 1}. ${act.name}</strong>
+              <button class="danger" onclick="removeAction(${jobIdx},${actIdx})">X</button>
+            </div>
+            <div class="row" style="margin:0;">${renderParamInputs(act, jobIdx, actIdx)}</div>
+          </div>
+        `).join('');
+
+        const addOpts = AVAILABLE_ACTIONS.map((a, i) => `<option value="${i}">${a.label} (${a.kind})</option>`).join('');
+
+        card.innerHTML = `
+          <div class="block-title">${job.name || 'Scheduled Job'}</div>
+          <div class="row">
+            <label>Name:</label>
+            <input type="text" value="${(job.name || '').replace(/"/g, '&quot;')}" onchange="jobs[${jobIdx}].name=this.value;render()">
+            <label><input type="checkbox" ${job.enabled !== false ? 'checked' : ''} onchange="jobs[${jobIdx}].enabled=this.checked"> Enabled</label>
+          </div>
+          <div class="row">
+            <label>Target:</label>
+            <select onchange="jobs[${jobIdx}].client_id=this.value">${clientOpts}</select>
+            <label>Speed:</label>
+            <input type="number" min="0.001" max="10" step="0.001" value="${job.config.sleep_modifier ?? 1.0}" onchange="jobs[${jobIdx}].config.sleep_modifier=Number(this.value)">
+          </div>
+          <div class="row">
+            <label>Time:</label>
+            <input type="time" value="${parsed.time}" onchange="updateTime(${jobIdx},this.value)">
+            <label>Cron:</label>
+            <input type="text" value="${job.cron || '0 17 * * *'}" onchange="jobs[${jobIdx}].cron=this.value;render()">
+          </div>
+          <div class="row">${dayCheckboxes}</div>
+          <div>${actionsHtml}</div>
+          <div class="row">
+            <select id="add-act-${jobIdx}">${addOpts}</select>
+            <button onclick="addAction(${jobIdx})">+ Action</button>
+            <button class="danger" onclick="removeJob(${jobIdx})">Delete Job</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function addJob() {
+      jobs.push({
+        name: 'New Job',
+        cron: '0 17 * * *',
+        enabled: true,
+        client_id: 'all',
+        config: { sleep_modifier: 1.0, actions: [{ name: 'off', params: {} }] },
+      });
+      render();
+    }
+
+    function removeJob(jobIdx) {
+      jobs.splice(jobIdx, 1);
+      render();
+    }
+
+    function toggleDay(jobIdx, dayIdx, checked) {
+      const parsed = parseCron(jobs[jobIdx].cron);
+      const set = new Set(parsed.days);
+      if (checked) set.add(dayIdx); else set.delete(dayIdx);
+      jobs[jobIdx].cron = buildCron(parsed.time, Array.from(set));
+      render();
+    }
+
+    function updateTime(jobIdx, timeVal) {
+      const parsed = parseCron(jobs[jobIdx].cron);
+      jobs[jobIdx].cron = buildCron(timeVal, parsed.days);
+      render();
+    }
+
+    function addAction(jobIdx) {
+      const selIdx = Number(document.getElementById(`add-act-${jobIdx}`).value);
+      const spec = AVAILABLE_ACTIONS[selIdx];
+      if (!spec) return;
+      jobs[jobIdx].config.actions.push({
+        name: spec.name,
+        params: JSON.parse(JSON.stringify(spec.params || {})),
+      });
+      render();
+    }
+
+    function updateParam(jobIdx, actIdx, key, val) {
+      if (!jobs[jobIdx].config.actions[actIdx].params) jobs[jobIdx].config.actions[actIdx].params = {};
+      jobs[jobIdx].config.actions[actIdx].params[key] = val;
+    }
+
+    function ensurePalette(jobIdx, actIdx) {
+      if (!jobs[jobIdx].config.actions[actIdx].params) jobs[jobIdx].config.actions[actIdx].params = {};
+      if (!Array.isArray(jobs[jobIdx].config.actions[actIdx].params.palette)) {
+        jobs[jobIdx].config.actions[actIdx].params.palette = ['#ff0000', '#00ff00'];
+      }
+      return jobs[jobIdx].config.actions[actIdx].params.palette;
+    }
+
+    function updatePaletteColor(jobIdx, actIdx, cIdx, hex) {
+      ensurePalette(jobIdx, actIdx)[cIdx] = hex;
+    }
+
+    function addPaletteColor(jobIdx, actIdx) {
+      ensurePalette(jobIdx, actIdx).push('#ffffff');
+      render();
+    }
+
+    function removePaletteColor(jobIdx, actIdx, cIdx) {
+      const pal = ensurePalette(jobIdx, actIdx);
+      if (pal.length > 1) {
+        pal.splice(cIdx, 1);
+        render();
+      }
+    }
+
+    function removeAction(jobIdx, actIdx) {
+      jobs[jobIdx].config.actions.splice(actIdx, 1);
+      render();
+    }
+
+    async function saveSchedule() {
+      const status = document.getElementById('save-status');
+      status.textContent = 'Saving...';
+      try {
+        const res = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobs }),
+        });
+        const data = await res.json();
+        status.textContent = data.ok ? `Saved ${data.count} job(s)!` : `Error: ${data.error}`;
+      } catch (err) {
+        status.textContent = 'Save failed: ' + err.message;
+      }
+    }
+
+    async function reloadUI() {
+      const status = document.getElementById('save-status');
+      if (status) status.textContent = 'Reloading UI code...';
+      try {
+        await fetch('/api/reload', { method: 'POST' });
+      } catch (err) {
+      }
+      setTimeout(() => window.location.reload(), 1200);
+    }
+
+    render();
+  </script>
+</body>
+</html>

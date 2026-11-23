@@ -76,13 +76,6 @@ class HttpRequest:
       self.body = raw.decode()
 
 
-response_404 = '\r\n'.join([
-  'HTTP/1.1 404 Not Found',
-  'Content-Type: text/html',
-  'Content-Length: 0',
-  'Connection: close',
-])
-
 response_status_codes = {
     '200': 'OK',
     '204': 'No Content',

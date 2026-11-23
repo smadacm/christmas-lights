@@ -1,11 +1,11 @@
-from patterns.base import Pattern
+from patterns.base import Action
 
 
-class Basic(Pattern):
+class Basic(Action):
   name = 'basic'
-  path = '/basic'
   loop = False
 
-  def render_frame(self):
+  def apply(self, pixels):
     for i in range(self.n):
-      self.pixels[i] = (0, int((1.0 / self.n) * 200 * i), 155)
+      pixels[i] = (0, int((1.0 / self.n) * 200 * i), 155)
+    return pixels
